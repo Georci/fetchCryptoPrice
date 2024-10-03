@@ -57,17 +57,20 @@ pub async fn fetch_okx_mark_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair)
                                 let mark_price_data = &data["data"][0];
                                 let mark_px = mark_price_data["markPx"].as_str().unwrap_or("0"); // 获取标记价格
                                 let price = mark_px.parse::<f64>().unwrap_or(0.0); // 解析价格
-                                println!("Mark Price for {}: {}", inst_id, price);
+                                println!("Mark Price for {} : {} from okx", inst_id, price);
 
                                 // 检查价格变化是否超过阈值
                                 price_data.price = price;
                                 if (price - last_price).abs() > deviation_threshold {
-                                    tx.send(price_data.clone()).await?;
-                                    println!("价格变化超过阈值，推送价格: {:.2} -> {:.2}", last_price, price);
-                                    last_price = price; // 更新上次推送的价格
+                                    if let Err(e) = tx.send(price_data.clone()).await {
+                                        eprintln!("发送价格时出错: {:?}", e);
+                                    } else {
+                                        println!("价格变化超过阈值，推送价格: {:.2} -> {:.2}", last_price, price);
+                                        last_price = price; // 更新上次推送的价格
 
-                                    // 重置心跳定时器
-                                    heartbeat_timer = Box::pin(tokio::time::sleep(Duration::from_secs(heartbeat)));
+                                        // 重置心跳定时器
+                                        heartbeat_timer = Box::pin(tokio::time::sleep(Duration::from_secs(heartbeat)));
+                                    }
                                 }
                             }
                         }

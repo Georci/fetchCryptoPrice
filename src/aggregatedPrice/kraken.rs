@@ -16,6 +16,8 @@ pub async fn fetch_kraken_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) -
     let response = client.get("wss://ws.kraken.com/v2").upgrade().send().await?;
     let mut websocket = response.into_websocket().await?;
 
+    println!("Connected to kraken WebSocket");
+
     // 订阅 Kraken 交易数据
     let symbol = format!("{}/{}", pair.token1, pair.token2);
     let subscribe_message = json!({
@@ -43,15 +45,19 @@ pub async fn fetch_kraken_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) -
                                 if let Some(trade_data) = data_array.get(0) {
                                     if let Some(price) = trade_data["price"].as_f64() {
                                         price_data.price = price;
+                                        println!("Mark Price for {}-{} : {:.2} from kraken", pair.token1, pair.token2, price);
 
                                         // 检查价格变化是否超过阈值
                                         if (price - last_price).abs() > deviation_threshold {
-                                            tx.send(price_data.clone()).await?;
-                                            println!("价格变化超过阈值，推送价格: {:.2} -> {:.2}", last_price, price);
-                                            last_price = price;
+                                            if let Err(e) = tx.send(price_data.clone()).await{
+                                                eprintln!("发送价格时出错：{}", e);
+                                            } else {
+                                                println!("价格变化超过阈值，推送价格: {:.2} -> {:.2}", last_price, price);
+                                                last_price = price;
 
-                                            // 重置心跳定时器
-                                            heartbeat_timer = Box::pin(sleep(Duration::from_secs(heartbeat)));
+                                                // 重置心跳定时器
+                                                heartbeat_timer = Box::pin(sleep(Duration::from_secs(heartbeat)));
+                                            }
                                         }
                                     }
                                 }

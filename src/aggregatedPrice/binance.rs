@@ -35,7 +35,7 @@ pub async fn fetch_binance_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) 
 
     // 初始心跳定时器
     let mut heartbeat_timer = Box::pin(sleep(Duration::from_secs(heartbeat)));
-    let mut price_data = PriceData{
+    let mut price_data = PriceData {
         id: 1,
         source: "binance".to_string(),
         price: 0.0,
@@ -44,20 +44,22 @@ pub async fn fetch_binance_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) 
     // 循环接收 WebSocket 消息
     loop {
         tokio::select! {
-            // 处理 WebSocket 消息
-            message = websocket.try_next() => {
-                match message? {
-                    Some(Message::Text(text)) => {
-                        // 解析 JSON 消息并提取价格
-                        if let Ok(event_data) = serde_json::from_str::<Value>(&text) {
-                            if let Some(price_str) = event_data["p"].as_str() {
-                                let price = price_str.parse::<f64>().unwrap();
-                                println!("{}/{} 当前价格: {:.2}", pair.token1, pair.token2, price);
+        // 处理 WebSocket 消息
+        message = websocket.try_next() => {
+            match message? {
+                Some(Message::Text(text)) => {
+                    // 解析 JSON 消息并提取价格
+                    if let Ok(event_data) = serde_json::from_str::<Value>(&text) {
+                        if let Some(price_str) = event_data["p"].as_str() {
+                            let price = price_str.parse::<f64>().unwrap();
+                            println!("Mark Price for {}-{} : {:.2} from binance", pair.token1, pair.token2, price);
 
-                                // 检查价格变化是否超过阈值
-                                price_data.price = price;
-                                if (price - last_price).abs() > deviation_threshold {
-                                    tx.send(price_data.clone()).await.unwrap();
+                            // 检查价格变化是否超过阈值
+                            price_data.price = price;
+                            if (price - last_price).abs() > deviation_threshold {
+                                if let Err(e) = tx.send(price_data.clone()).await {
+                                    eprintln!("发送价格时出错: {:?}", e);
+                                } else {
                                     println!("价格变化超过阈值，推送价格: {:.2} -> {:.2}", last_price, price);
                                     last_price = price; // 更新上次推送的价格
 
@@ -67,19 +69,23 @@ pub async fn fetch_binance_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) 
                             }
                         }
                     }
-                    Some(Message::Binary(_)) => println!("接收到意外的二进制数据"),
-                    _ => {},
                 }
+                Some(Message::Binary(_)) => println!("接收到意外的二进制数据"),
+                _ => {},
             }
+        }
 
-            // 处理心跳定时器触发
-            _ = heartbeat_timer.as_mut() => {
-                tx.send(price_data.clone()).await.unwrap();
+        // 处理心跳定时器触发
+        _ = heartbeat_timer.as_mut() => {
+            if let Err(e) = tx.send(price_data.clone()).await {
+                eprintln!("发送心跳推送时出错: {:?}", e);
+            } else {
                 println!("Heartbeat 触发推送: {:.2}", last_price);
 
                 // 重置心跳计时器
                 heartbeat_timer = Box::pin(sleep(Duration::from_secs(heartbeat)));
             }
         }
+    }
     }
 }
