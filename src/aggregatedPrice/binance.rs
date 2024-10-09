@@ -3,13 +3,16 @@ use reqwest::Proxy;
 use serde_json::Value;
 use std::error::Error;
 use std::pin::Pin;
+use chrono::Utc;
+use mysql::{params, PooledConn};
+use mysql::prelude::Queryable;
 use reqwest_websocket::{Message, RequestBuilderExt};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 use crate::aggregatedPrice::cryptopair::CryptoPair;
 use crate::aggregatedPrice::pricedata::PriceData;
 
-pub async fn fetch_binance_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) -> Result<(), Box<dyn Error>> {
+pub async fn fetch_binance_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair, conn :&mut PooledConn) -> Result<(), Box<dyn Error>> {
     // 设置代理
     let proxy = Proxy::https("http://172.17.112.1:7890")?; // 写死的代理地址
 
@@ -41,6 +44,7 @@ pub async fn fetch_binance_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) 
         price: 0.0,
     };
 
+    let mut send_status;
     // 循环接收 WebSocket 消息
     loop {
         tokio::select! {
@@ -59,13 +63,26 @@ pub async fn fetch_binance_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) 
                             if (price - last_price).abs() > deviation_threshold {
                                 if let Err(e) = tx.send(price_data.clone()).await {
                                     eprintln!("发送价格时出错: {:?}", e);
+                                        send_status = "failed"
                                 } else {
                                     println!("价格变化超过阈值，推送价格: {:.2} -> {:.2}", last_price, price);
                                     last_price = price; // 更新上次推送的价格
+                                        send_status = "succeed";
 
                                     // 重置心跳计时器
                                     heartbeat_timer = Box::pin(sleep(Duration::from_secs(heartbeat)));
                                 }
+                                     // 插入数据到数据库
+                                conn.exec_drop(
+                                    r"INSERT INTO DexRecord (dex_name, send_price, send_status, pair_name, timestamp) VALUES (:dex_name, :send_price, :send_status, :pair_name, :timestamp)",
+                                    params! {
+                                        "dex_name" => "Binance".to_string(),
+                                        "send_price" => price,
+                                        "send_status" => send_status,
+                                            "pair_name" => format!("{}-{}", pair.token1, pair.token2),
+                                            "timestamp" => Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                                    },
+                                ).unwrap();
                             }
                         }
                     }
@@ -79,8 +96,9 @@ pub async fn fetch_binance_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) 
         _ = heartbeat_timer.as_mut() => {
             if let Err(e) = tx.send(price_data.clone()).await {
                 eprintln!("发送心跳推送时出错: {:?}", e);
+                    break;
             } else {
-                println!("Heartbeat 触发推送: {:.2}", last_price);
+                println!("Heartbeat 触发推送: {:.2}", &price_data.price);
 
                 // 重置心跳计时器
                 heartbeat_timer = Box::pin(sleep(Duration::from_secs(heartbeat)));
@@ -88,4 +106,5 @@ pub async fn fetch_binance_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) 
         }
     }
     }
+    Ok(())
 }

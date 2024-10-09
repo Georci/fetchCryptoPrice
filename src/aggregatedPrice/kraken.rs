@@ -3,11 +3,14 @@ use reqwest::{Client, Proxy};
 use reqwest_websocket::{Message, RequestBuilderExt};
 use serde_json::{json, Value};
 use std::error::Error;
+use chrono::Utc;
+use mysql::{params, PooledConn};
+use mysql::prelude::Queryable;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 use crate::aggregatedPrice::{pricedata::PriceData, cryptopair::CryptoPair};
 
-pub async fn fetch_kraken_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) -> Result<(), Box<dyn Error>> {
+pub async fn fetch_kraken_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair, conn: &mut PooledConn) -> Result<(), Box<dyn Error>> {
     // 设置代理
     let proxy = Proxy::https("http://172.17.112.1:7890")?;
     let client = Client::builder().proxy(proxy).danger_accept_invalid_certs(true).build()?;
@@ -33,6 +36,7 @@ pub async fn fetch_kraken_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) -
     let mut price_data = PriceData { id: 3, source: "kraken".to_string(), price: 0.0 };
     let mut heartbeat_timer = Box::pin(sleep(Duration::from_secs(heartbeat)));
 
+    let mut send_status;
     // 循环接收 WebSocket 消息
     loop {
         tokio::select! {
@@ -51,13 +55,25 @@ pub async fn fetch_kraken_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) -
                                         if (price - last_price).abs() > deviation_threshold {
                                             if let Err(e) = tx.send(price_data.clone()).await{
                                                 eprintln!("发送价格时出错：{}", e);
+                                                send_status = "failed";
                                             } else {
                                                 println!("价格变化超过阈值，推送价格: {:.2} -> {:.2}", last_price, price);
                                                 last_price = price;
+                                                send_status = "succeed";
 
                                                 // 重置心跳定时器
                                                 heartbeat_timer = Box::pin(sleep(Duration::from_secs(heartbeat)));
                                             }
+                                            conn.exec_drop(
+                                                r"INSERT INTO DexRecord (dex_name, send_price, send_status, pair_name, timestamp) VALUES (:name, :send_price, :send_status, :pair_name, :timestamp)",
+                                                params! {
+                                                    "dex_name" => "KRAKEN",
+                                                    "send_price" => price,
+                                                    "send_status" => send_status,
+                                                    "pair_name" => format!("{}-{}", pair.token1, pair.token2),
+                                                    "timestamp" => Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                                                }
+                                            ).unwrap()
                                         }
                                     }
                                 }

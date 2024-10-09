@@ -1,1 +1,7 @@
 /target
+/migrations
+/node_modules
+.env
+diesel.toml
+package-lock.json
+package.json

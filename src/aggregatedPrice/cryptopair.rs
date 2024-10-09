@@ -8,10 +8,11 @@ pub struct CryptoPair {
     pub deviation_threshold: f64,
     pub oracle_contract: String,
     pub api_key: String,
+    pub private_key: String,
 }
 
 impl CryptoPair {
-    pub fn new(token1: &str, token2: &str, heartbeat: u64, deviation_threshold: f64, oracle_contract: &str, api_key:&str) -> Self {
+    pub fn new(token1: &str, token2: &str, heartbeat: u64, deviation_threshold: f64, oracle_contract: &str, api_key:&str, private_key:&str) -> Self {
         CryptoPair {
             token1: token1.to_string(),
             token2: token2.to_string(),
@@ -19,6 +20,7 @@ impl CryptoPair {
             deviation_threshold,
             oracle_contract: oracle_contract.to_string(),
             api_key: api_key.to_string(),
+            private_key:private_key.to_string()
         }
     }
 

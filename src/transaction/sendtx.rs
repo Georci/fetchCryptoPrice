@@ -7,9 +7,11 @@ use ethers::{
     prelude::*
 };
 use std::convert::TryFrom;
+use chrono::Utc;
 use ethers::types::Bytes;
 use hex_literal::hex;
-
+use mysql::{params, PooledConn};
+use mysql::prelude::Queryable;
 use crate::aggregatedPrice::cryptopair::CryptoPair;
 
 pub async fn send_tx(mut price_rx:mpsc::Receiver<f64>, crypto_pair:&CryptoPair, decimal:u8) -> Result<(), Box<dyn std::error::Error>> {
@@ -77,6 +79,7 @@ pub async fn test_sendTx() {
         deviation_threshold: 5.0,
         oracle_contract: "0x837E1D61B95E8ed90563D8723605586E8f80D2BF".to_string(),
         api_key: "".to_string(),
+        private_key: "".to_string(),
     };
     let crypto_pair_clone = crypto_pair1.clone(); // 克隆 crypto_pair
     let decimal:u8 = 3;
@@ -92,6 +95,7 @@ pub async fn send_tx_with_rpc(
     crypto_pair: &CryptoPair,
     decimal: u8,
     infura_api_key: &str, // 使用 Arc 让多个任务共享同一个 Provider
+    conn:&mut PooledConn
 ) -> eyre::Result<(), Box<dyn std::error::Error>> {
     
         let scale_factor = 10_u64.pow(decimal.into());
@@ -112,7 +116,7 @@ pub async fn send_tx_with_rpc(
         let contract_address = crypto_pair.oracle_contract.clone();
         let to_address: H160 = contract_address.parse()?;
         let chain_id = provider.get_chainid().await?;
-        let private_key = "a1825c59ad9a0160630c3ae5839d0bdb2d0bfee13c44376e68f35a8747f120aa";
+        let private_key = crypto_pair.private_key.clone();
         let wallet: LocalWallet = private_key.parse::<LocalWallet>()?.with_chain_id(chain_id.as_u64());
 
         let client = SignerMiddleware::new(provider.clone(), wallet.clone());
@@ -125,8 +129,8 @@ pub async fn send_tx_with_rpc(
             .ok_or_else(|| eyre::eyre!("No base fee found"))?;
 
         // 设置 maxFeePerGas 和 maxPriorityFeePerGas
-        let max_fee_per_gas = base_fee_per_gas * 2; // 可以根据需求调整倍率
         let max_priority_fee_per_gas = U256::from(2_000_000_000u64); // 通常设置为 2 Gwei
+        let max_fee_per_gas = base_fee_per_gas + max_priority_fee_per_gas; // 确保 maxFeePerGas > maxPriorityFeePerGas
 
         let tx = Eip1559TransactionRequest::new()
             .to(to_address)
@@ -137,8 +141,58 @@ pub async fn send_tx_with_rpc(
             .max_fee_per_gas(max_fee_per_gas)
             .max_priority_fee_per_gas(max_priority_fee_per_gas);
 
-        let pending_tx = client.send_transaction(tx, None).await?;
-        println!("交易已发送，交易哈希: {:?}", pending_tx);
 
-    Ok(())
+        let pending_tx = client.send_transaction(tx, None).await?;
+
+        // 获取交易哈希
+        let tx_hash = format!("{:?}", pending_tx.tx_hash());
+        println!("交易已发送，交易哈希: {}", tx_hash);
+
+        // 等待交易被打包
+        if let Some(receipt) = pending_tx.await? {
+            let status = if receipt.status == Some(U64::from(1)) {
+                "succeed"
+            } else {
+                "failed"
+            };
+            // 插入交易记录到 TransactionRecord 表
+            insert_transaction_record(
+                conn,
+                &format!("{}-{}", crypto_pair.token1, crypto_pair.token2),
+                &tx_hash,
+                status
+            );
+        } else {
+            // 如果交易回执是 None，说明交易可能未被打包
+            eprintln!("交易回执为空，可能未被打包: {}", tx_hash);
+            insert_transaction_record(
+                conn,
+                &format!("{}-{}", crypto_pair.token1, crypto_pair.token2),
+                &tx_hash,
+                "failed"
+            );
+        }
+        Ok(())
+}
+
+fn insert_transaction_record(
+    conn: &mut PooledConn,
+    pair_name: &str,
+    tx_hash: &str,
+    status: &str
+) {
+    // 获取当前的时间戳
+    let timestamp = Utc::now().naive_utc();  // `naive_utc` 获取没有时区信息的时间戳
+    let formatted_timestamp = timestamp.format("%Y-%m-%d %H:%M:%S").to_string(); // 转换为字符串格式
+
+    // 插入到 TransactionRecord 表
+    conn.exec_drop(
+        r"INSERT INTO TransactionRecord (pair_name, tx_hash, status, timestamp) VALUES (:pair_name, :tx_hash, :status, :timestamp)",
+        params! {
+            "pair_name" => pair_name,
+            "tx_hash" => tx_hash,
+            "status" => status,
+            "timestamp" => formatted_timestamp, // 使用当前时间戳
+        },
+    ).unwrap();
 }

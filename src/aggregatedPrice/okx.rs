@@ -1,5 +1,8 @@
 use std::error::Error;
+use chrono::Utc;
 use futures_util::{StreamExt, SinkExt};
+use mysql::{params, PooledConn};
+use mysql::prelude::Queryable;
 use serde_json::json;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
@@ -7,7 +10,7 @@ use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 use crate::aggregatedPrice::pricedata::PriceData;
 use crate::aggregatedPrice::cryptopair::CryptoPair;
 
-pub async fn fetch_okx_mark_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair) -> Result<(), Box<dyn Error>> {
+pub async fn fetch_okx_mark_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair, conn :&mut PooledConn) -> Result<(), Box<dyn Error>> {
     let mut inst_id = format!("{}-{}", pair.token1, pair.token2);
     println!("inst_id is {}", inst_id);
 
@@ -42,6 +45,7 @@ pub async fn fetch_okx_mark_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair)
         price: 0.0,
     };
 
+    let mut send_status;
     // 循环接收 WebSocket 消息
     loop {
         tokio::select! {
@@ -64,13 +68,26 @@ pub async fn fetch_okx_mark_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair)
                                 if (price - last_price).abs() > deviation_threshold {
                                     if let Err(e) = tx.send(price_data.clone()).await {
                                         eprintln!("发送价格时出错: {:?}", e);
+                                        send_status = "failed";
                                     } else {
                                         println!("价格变化超过阈值，推送价格: {:.2} -> {:.2}", last_price, price);
                                         last_price = price; // 更新上次推送的价格
+                                        send_status = "succeed";
 
                                         // 重置心跳定时器
                                         heartbeat_timer = Box::pin(tokio::time::sleep(Duration::from_secs(heartbeat)));
                                     }
+
+                                    conn.exec_drop(
+                                    r"INSERT INTO DexRecord (dex_name, send_price, send_status, pair_name, timestamp) VALUES (:dex_name, :send_price, :send_status, :pair_name, :timestamp)",
+                                    params! {
+                                        "dex_name" => "OKX".to_string(),
+                                        "send_price" => price,
+                                        "send_status" => send_status,
+                                            "pair_name" => format!("{}-{}", pair.token1, pair.token2),
+                                            "timestamp" => Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                                    },
+                                ).unwrap();
                                 }
                             }
                         }
