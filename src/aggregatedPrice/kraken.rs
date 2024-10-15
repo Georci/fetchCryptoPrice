@@ -12,7 +12,7 @@ use crate::aggregatedPrice::{pricedata::PriceData, cryptopair::CryptoPair};
 
 pub async fn fetch_kraken_price(tx: mpsc::Sender<PriceData>, pair: CryptoPair, conn: &mut PooledConn) -> Result<(), Box<dyn Error>> {
     // 设置代理
-    let proxy = Proxy::https("http://172.17.112.1:7890")?;
+    let proxy = Proxy::https("http://10.255.255.254:7890")?;
     let client = Client::builder().proxy(proxy).danger_accept_invalid_certs(true).build()?;
 
     // 创建 WebSocket 连接

@@ -1,7 +1,7 @@
 use std::fmt;
 use crate::aggregatedPrice::cryptopair::CryptoPair;
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 pub struct PriceData {
     pub id: u8,
     pub source: String,  // 来源，例如交易所名称

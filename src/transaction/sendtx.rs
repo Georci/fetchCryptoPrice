@@ -77,6 +77,7 @@ pub async fn test_sendTx() {
         token2: "USDT".to_string(),
         heartbeat: 60,
         deviation_threshold: 5.0,
+        decimal:1,
         oracle_contract: "0x837E1D61B95E8ed90563D8723605586E8f80D2BF".to_string(),
         api_key: "".to_string(),
         private_key: "".to_string(),
@@ -93,11 +94,10 @@ pub async fn test_sendTx() {
 pub async fn send_tx_with_rpc(
     price:f64,
     crypto_pair: &CryptoPair,
-    decimal: u8,
     infura_api_key: &str, // 使用 Arc 让多个任务共享同一个 Provider
     conn:&mut PooledConn
 ) -> eyre::Result<(), Box<dyn std::error::Error>> {
-    
+        let decimal = crypto_pair.decimal;
         let scale_factor = 10_u64.pow(decimal.into());
         let scaled_price = (price * scale_factor as f64).round() as u64;
 

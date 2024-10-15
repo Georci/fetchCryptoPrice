@@ -6,14 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-reqwest = { version = "0.12.7", features = ["json"] }
+reqwest = { version = "0.12.8",  features = ["json","rustls-tls"] }
 tokio = { version = "1.40.0", features = ["full"] }
 serde = {version= "1.0.210", features = ["derive"]}
 serde_json = "1.0.128"
 env_logger = "0.11.5"
-binance_spot_connector_rust = { git = "https://github.com/binance/binance-spot-connector-rust", features = ["enable-hyper", "enable-tokio-tungstenite"] }
 log = "0.4.22"
-futures-util = "0.3.30"
+futures-util = "0.3.31"
 tokio-tungstenite = { version = "0.24.0" , features = ["rustls-tls-native-roots"]}
 
 url = "2.5.2"
@@ -21,10 +20,10 @@ tokio-native-tls = "0.3.1"
 native-tls = "0.2.12"
 tokio-socks = "0.5.2"
 reqwest-websocket = "0.4.2"
-futures = { version = "0.3" }
+futures = { version = "0.3.31" }
 time = "0.3.36"
-ethers = "2.0"
-eyre = "0.6.8"
+ethers = "2.0.14"
+eyre = "0.6.12"
 hex = "0.4.3"
 dotenv = "0.15.0"
 bytes = "1.7.2"  # 添加 dotenv crate
@@ -32,3 +31,4 @@ hex-literal = "0.4.1"
 mysql = "25.0.1"
 diesel = { version = "2.2.4", features = ["mysql"] }
 chrono = "0.4.38"
+async-trait = "0.1"

@@ -5,12 +5,7 @@ use crate::aggregatedPrice::cryptopair::CryptoPair;
 use crate::aggregatedPrice::pricedata::PriceData;
 use chrono::Utc;
 
-// Ken：聚合各交易所的价格(但是估计要传入代币对的名称，同时传入的应该还有heartbeat、deviation threshold)
-// Q1:但是如果隔一段时间访问一次，其实更新的速度可能就慢了，所以还是得使用ws一直监听，
-//     监听的时候有两种情况可以被推送到外层函数merge_price，1.推送的时间到了(所以heartbeat、deviation还是进内层函数) 2.当前价格与上一次推送的价格差值过大
-//  answer:现在暂定使用多线程
-// Q2:解决传递数据的问题之后，但是底层函数获取价格之后怎样将价格数据传递到该函数呢？或者换一个说法，当前函数怎么知道啥时候应该聚合价格呢？
-//  answer:暂定使用异步通道吧，merge函数创建异步通道，fetch_price函数将价格推送到该通道中
+// Ken：聚合各交易所的价格
 pub async fn merge_price(mut merge_rx: mpsc::Receiver<PriceData>, price_tx: mpsc::Sender<f64>, crypto_pair:&CryptoPair, conn:&mut PooledConn) -> Result<(), Box<dyn std::error::Error>> {
     let mut price_datas = vec![];
 

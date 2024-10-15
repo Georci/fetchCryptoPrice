@@ -6,5 +6,6 @@ pub mod okx;
 pub mod kraken;
 pub mod cryptopair;
 pub mod pricedata;
+pub mod Exchange;
 
 

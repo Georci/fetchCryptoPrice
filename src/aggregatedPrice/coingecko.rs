@@ -48,7 +48,7 @@ async fn get_price(token1: &str, token2:&str) -> Result<f64, reqwest::Error> {
     headers.insert("x-cg-demo-api-key", HeaderValue::from_static("CG-2arx6wF7DWhZaqPQgrk3VKe9"));
 
     // 设置代理
-    let proxy = Proxy::https("http://172.17.112.1:7890")?;  // 替换为你的代理地址
+    let proxy = Proxy::https("http://127.0.0.1:7890")?;  // 替换为你的代理地址
 
     // 创建带有代理的客户端
     let client = reqwest::Client::builder()
